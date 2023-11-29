@@ -12,6 +12,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// The SignUp function handles the sign-up process by reading the request body, hashing the password,
+// creating a new user in the database, and returning a response.
 func SignUp(c *gin.Context) {
 	var body struct {
 		Email    string
@@ -50,6 +52,8 @@ func SignUp(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{})
 }
 
+// The Login function handles user authentication by checking the email and password, generating a JWT
+// token, and returning it to the user.
 func Login(c *gin.Context) {
 	var body struct {
 		Email    string
@@ -95,6 +99,7 @@ func Login(c *gin.Context) {
 		})
 		return
 	}
+
 	initializer.DB.Update(tokenString, &user.Token)
 
 	c.JSON(http.StatusOK, gin.H{

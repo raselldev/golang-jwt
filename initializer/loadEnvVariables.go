@@ -6,6 +6,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// The function `LoadEnvVariables` loads environment variables from a .env file in Go.
 func LoadEnvVariables() {
 	err := godotenv.Load()
 
