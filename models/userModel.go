@@ -1,6 +1,8 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+)
 
 // The User struct represents a user with email, password, and token fields.
 // @property  - - `gorm.Model`: This is a struct provided by the GORM library that includes common
@@ -16,7 +18,8 @@ import "gorm.io/gorm"
 // actions.
 type User struct {
 	gorm.Model
-	Email    string `gorm:"unique"`
-	Password string
-	Token    string
+	Email       string `gorm:"unique"`
+	Password    string
+	Token       string
+	TokenExpire int64
 }

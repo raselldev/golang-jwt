@@ -1,12 +1,14 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/raselldev/go-jwt/helpers"
 	"github.com/raselldev/go-jwt/initializer"
 	"github.com/raselldev/go-jwt/models"
 	"golang.org/x/crypto/bcrypt"
@@ -24,7 +26,15 @@ func SignUp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "failed to read body",
 		})
+		return
+	}
 
+	validEmail := helpers.IsEmailValid(body.Email)
+
+	if !validEmail {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "email format is invalid",
+		})
 		return
 	}
 
@@ -34,7 +44,6 @@ func SignUp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "failed to hash password",
 		})
-
 		return
 	}
 
@@ -49,7 +58,9 @@ func SignUp(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{})
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "OK",
+	})
 }
 
 // The Login function handles user authentication by checking the email and password, generating a JWT
@@ -86,21 +97,24 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": user.ID,
 		"exp": time.Now().Add(time.Hour * 24 * 30).Unix(),
 	})
 
-	tokenString, err := token.SignedString(os.Getenv("SECRET"))
+	secret := []byte(os.Getenv("SECRET"))
+	tokenString, err := token.SignedString(secret)
 
 	if err != nil {
+		fmt.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "failed to create token",
 		})
 		return
 	}
-
-	initializer.DB.Update(tokenString, &user.Token)
+	user.Token = tokenString
+	user.TokenExpire = time.Now().Add(time.Hour * 24 * 30).Unix()
+	initializer.DB.Save(&user)
 
 	c.JSON(http.StatusOK, gin.H{
 		"token":   tokenString,
