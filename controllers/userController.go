@@ -112,6 +112,7 @@ func Login(c *gin.Context) {
 		})
 		return
 	}
+
 	user.Token = tokenString
 	user.TokenExpire = time.Now().Add(time.Hour * 24 * 30).Unix()
 	initializer.DB.Save(&user)
