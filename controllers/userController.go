@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -17,44 +16,30 @@ import (
 // The SignUp function handles the sign-up process by reading the request body, hashing the password,
 // creating a new user in the database, and returning a response.
 func SignUp(c *gin.Context) {
-	var body struct {
-		Email    string
-		Password string
+	var requestBody struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
-	if c.Bind(&body) != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "failed to read body",
-		})
+	if err := c.Bind(&requestBody); err != nil {
+		handleError(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
-	validEmail := helpers.IsEmailValid(body.Email)
-
-	if !validEmail {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "email format is invalid",
-		})
+	if !helpers.IsEmailValid(requestBody.Email) {
+		handleError(c, http.StatusBadRequest, "email format is invalid")
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), 10)
-
+	hashedPassword, err := hashPassword(requestBody.Password)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "failed to hash password",
-		})
+		handleError(c, http.StatusBadRequest, "failed to hash password")
 		return
 	}
 
-	user := models.User{Email: body.Email, Password: string(hash)}
-	result := initializer.DB.Create(&user)
-
-	if result.Error != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "failed to create user",
-		})
-
+	user := models.User{Email: requestBody.Email, Password: hashedPassword}
+	if err := createNewUser(&user); err != nil {
+		handleError(c, http.StatusBadRequest, "failed to create user")
 		return
 	}
 
@@ -63,62 +48,75 @@ func SignUp(c *gin.Context) {
 	})
 }
 
+func hashPassword(password string) (string, error) {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 10)
+	return string(hashedPassword), err
+}
+
+func createNewUser(user *models.User) error {
+	result := initializer.DB.Create(user)
+	return result.Error
+}
+
 // The Login function handles user authentication by checking the email and password, generating a JWT
 // token, and returning it to the user.
 func Login(c *gin.Context) {
-	var body struct {
-		Email    string
-		Password string
+	var requestBody struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
-	if c.Bind(&body) != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "failed to read body",
-		})
-
+	if err := c.Bind(&requestBody); err != nil {
+		handleError(c, http.StatusBadRequest, "failed to read body")
 		return
 	}
 
-	var user models.User
-	initializer.DB.First(&user, "email=?", body.Email)
-
-	if user.ID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid email or password",
-		})
+	user, err := findUserByEmail(requestBody.Email)
+	if err != nil || user.ID == 0 || !checkPassword(user.Password, requestBody.Password) {
+		handleError(c, http.StatusBadRequest, "invalid email or password")
+		return
 	}
 
-	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password))
-
+	tokenString, err := generateToken(user.ID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid email or password",
-		})
+		handleError(c, http.StatusBadRequest, "failed to create token")
 		return
 	}
 
+	updateUserToken(user, tokenString)
+
+	c.JSON(http.StatusOK, gin.H{
+		"token":   tokenString,
+		"expires": user.TokenExpire,
+	})
+}
+
+func handleError(c *gin.Context, statusCode int, message string) {
+	c.JSON(statusCode, gin.H{"error": message})
+}
+
+func findUserByEmail(email string) (models.User, error) {
+	var user models.User
+	err := initializer.DB.First(&user, "email=?", email).Error
+	return user, err
+}
+
+func checkPassword(hash, password string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+func generateToken(userID uint) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": user.ID,
+		"sub": userID,
 		"exp": time.Now().Add(time.Hour * 24 * 30).Unix(),
 	})
 
 	secret := []byte(os.Getenv("SECRET"))
-	tokenString, err := token.SignedString(secret)
+	return token.SignedString(secret)
+}
 
-	if err != nil {
-		fmt.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "failed to create token",
-		})
-		return
-	}
-
+func updateUserToken(user models.User, tokenString string) {
 	user.Token = tokenString
 	user.TokenExpire = time.Now().Add(time.Hour * 24 * 30).Unix()
 	initializer.DB.Save(&user)
-
-	c.JSON(http.StatusOK, gin.H{
-		"token":   tokenString,
-		"expires": time.Now().Add(time.Hour * 24 * 30).Unix(),
-	})
 }
